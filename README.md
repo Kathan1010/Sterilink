@@ -62,15 +62,17 @@ Sterilink is under active development. The current state of each component is su
 | Build plan and design decisions (`docs/PLAN.md`) | Complete |
 | PostgreSQL core schema (`database/schema.sql`) | Complete for the first slice |
 | Validation triggers (`database/triggers.sql`) | Complete for the first slice (4 of 5 triggers) |
+| Validation demo script (`database/test_invalid_inserts.sql`) | Complete — 6 rejection cases, one per constraint/trigger |
+| Synthetic seed data (`backend/scripts/seed.py`) | Complete |
+| FastAPI backend: auth, operations endpoints, EDF planner | Complete for the first slice |
 | External facilities and failure-propagation trigger | Planned |
 | Database views and read-only role | Planned |
-| Synthetic seed data | Planned |
-| FastAPI backend, planner and replanner | Planned |
+| Replanner | Planned |
 | MongoDB event log integration | Planned |
 | React frontend | Planned |
 | LLM assistant | Planned |
 
-The first slice covers the core flow: register an operation and generate a valid sterilisation batch for it. Failure handling, external facilities and replanning are delivered in subsequent slices.
+The first slice covers the core flow end to end: a scheduler logs in, registers an operation, and the backend plans its sterilisation batches on compatible autoclaves, enforced by the database at every step. Failure handling, external facilities and replanning are delivered in subsequent slices.
 
 ---
 
@@ -249,18 +251,22 @@ MongoDB holds a single append-only collection, `event_log`, which serves as the 
 
 ## API Overview
 
-The planned REST endpoints map directly to the processes in the project's Data Flow Diagrams.
+The REST endpoints map directly to the processes in the project's Data Flow Diagrams. Implemented endpoints are marked below; the rest are planned for later slices.
 
-| Method and path | Description | DFD process |
-|-----------------|-------------|-------------|
-| `POST /operations` | Register a new operation | 1.1 Register Operation |
-| `POST /operations/{id}/plan` | Generate and dispatch the sterilisation plan | 1.2 to 2.3 Generate and Send Plan |
-| `POST /batches/{id}/start` | Mark a batch cycle as started | 3.1 Cycle Updates |
-| `POST /batches/{id}/complete` | Mark a batch cycle as completed | 3.1 Cycle Updates |
-| `POST /batches/{id}/fail` | Report a failed cycle | 3.1 Cycle Updates |
-| `PATCH /autoclaves/{id}/status` | Change autoclave status, triggering replanning on failure | 3.1, 4.1 to 4.3 Replan and Notify |
-| `GET /events?operation_id={id}` | Retrieve the event timeline for an operation | Event Log |
-| `POST /assistant/query` | Ask a natural-language question | AI Assistant |
+| Method and path | Description | DFD process | Status |
+|-----------------|-------------|-------------|--------|
+| `POST /auth/login` | Log in, returns a JWT | — | Implemented |
+| `POST /operations` | Register an operation and immediately plan its sterilisation batches | 1.1 Register Operation + 1.2 to 2.3 Generate Plan | Implemented |
+| `GET /operations` | List all operations | — | Implemented |
+| `GET /operations/{id}` | Get one operation with its planned batches | — | Implemented |
+| `POST /batches/{id}/start` | Mark a batch cycle as started | 3.1 Cycle Updates | Planned |
+| `POST /batches/{id}/complete` | Mark a batch cycle as completed | 3.1 Cycle Updates | Planned |
+| `POST /batches/{id}/fail` | Report a failed cycle | 3.1 Cycle Updates | Planned |
+| `PATCH /autoclaves/{id}/status` | Change autoclave status, triggering replanning on failure | 3.1, 4.1 to 4.3 Replan and Notify | Planned |
+| `GET /events?operation_id={id}` | Retrieve the event timeline for an operation | Event Log | Planned |
+| `POST /assistant/query` | Ask a natural-language question | AI Assistant | Planned |
+
+Note: `POST /operations` currently combines registration and planning into a single call, rather than the two-step `POST /operations` + `POST /operations/{id}/plan` split shown in the DFD — simpler for the first slice; may be split later if the UI needs to show the raw registration before planning completes.
 
 ---
 
@@ -277,10 +283,12 @@ Sterilink/
 |   `-- roles.sql             Restricted read-only role (planned)
 |-- backend/
 |   |-- .env.example          Environment variable template
-|   |-- app/                  FastAPI application (planned)
-|   |   |-- routers/
-|   |   `-- services/
-|   |-- scripts/seed.py       Synthetic data generator (planned)
+|   |-- requirements.txt
+|   |-- app/                  FastAPI application
+|   |   |-- main.py, config.py, db.py, auth.py, schemas.py
+|   |   |-- routers/          auth.py, operations.py
+|   |   `-- services/         planner.py (EDF), replanner.py (planned)
+|   |-- scripts/seed.py       Synthetic data generator
 |   `-- tests/                (planned)
 `-- frontend/                 React and Vite client (planned)
 ```
@@ -333,9 +341,35 @@ Edit `backend/.env` with your local credentials. See [Configuration](#configurat
 
 ### 5. Start MongoDB
 
-Ensure a MongoDB instance is running and reachable at the address configured in `MONGO_URL`. On Windows, MongoDB is typically installed as a service and starts automatically.
+Ensure a MongoDB instance is running and reachable at the address configured in `MONGO_URL`. On Windows, MongoDB is typically installed as a service and starts automatically. Not yet required for the first slice (no event log integration yet), but the backend config expects the variable to be set.
 
-Instructions for running the backend and frontend will be added as those components are implemented.
+### 6. Set up the Python backend
+
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS/Linux
+pip install -r requirements.txt
+```
+
+### 7. Load synthetic data
+
+```bash
+python scripts/seed.py
+```
+
+This wipes and repopulates the database with sample procedures, equipment, autoclaves and three demo users (printed to the console on success).
+
+### 8. Run the API
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Visit `http://127.0.0.1:8000/docs` for interactive API documentation. Log in via `POST /auth/login` with one of the seeded users, then call `POST /operations` with a `procedure_id` and a future `scheduled_start` to see the planner assign sterilisation batches.
+
+Frontend instructions will be added once the React client exists.
 
 ---
 
