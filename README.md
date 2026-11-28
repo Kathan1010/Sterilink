@@ -69,7 +69,8 @@ Sterilink is under active development. The current state of each component is su
 | Database views and read-only role | Planned |
 | Replanner | Planned |
 | MongoDB event log integration | Planned |
-| React frontend | Planned |
+| React frontend: login, register operation, operations and batches view | Complete for the first slice |
+| Read-only database role (`database/roles.sql`) | Complete |
 | LLM assistant | Planned |
 
 The first slice covers the core flow end to end: a scheduler logs in, registers an operation, and the backend plans its sterilisation batches on compatible autoclaves, enforced by the database at every step. Failure handling, external facilities and replanning are delivered in subsequent slices.
@@ -259,6 +260,7 @@ The REST endpoints map directly to the processes in the project's Data Flow Diag
 | `POST /operations` | Register an operation and immediately plan its sterilisation batches | 1.1 Register Operation + 1.2 to 2.3 Generate Plan | Implemented |
 | `GET /operations` | List all operations | — | Implemented |
 | `GET /operations/{id}` | Get one operation with its planned batches | — | Implemented |
+| `GET /procedures` | List procedures (for the registration form) | — | Implemented |
 | `POST /batches/{id}/start` | Mark a batch cycle as started | 3.1 Cycle Updates | Planned |
 | `POST /batches/{id}/complete` | Mark a batch cycle as completed | 3.1 Cycle Updates | Planned |
 | `POST /batches/{id}/fail` | Report a failed cycle | 3.1 Cycle Updates | Planned |
@@ -280,7 +282,7 @@ Sterilink/
 |   |-- schema.sql            Tables, keys, CHECK and EXCLUDE constraints, indexes
 |   |-- triggers.sql          Validation and derivation triggers
 |   |-- views.sql             Reporting views (planned)
-|   `-- roles.sql             Restricted read-only role (planned)
+|   `-- roles.sql             Restricted read-only role
 |-- backend/
 |   |-- .env.example          Environment variable template
 |   |-- requirements.txt
@@ -290,7 +292,7 @@ Sterilink/
 |   |   `-- services/         planner.py (EDF), replanner.py (planned)
 |   |-- scripts/seed.py       Synthetic data generator
 |   `-- tests/                (planned)
-`-- frontend/                 React and Vite client (planned)
+`-- frontend/                 React and Vite client (login, register operation, operations view)
 ```
 
 ---
@@ -369,7 +371,25 @@ uvicorn app.main:app --reload --port 8000
 
 Visit `http://127.0.0.1:8000/docs` for interactive API documentation. Log in via `POST /auth/login` with one of the seeded users, then call `POST /operations` with a `procedure_id` and a future `scheduled_start` to see the planner assign sterilisation batches.
 
-Frontend instructions will be added once the React client exists.
+### 9. Run the frontend
+
+In a second terminal, with the API still running:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` and log in with one of the seeded users (`scheduler1` / `sched123`, `staff1` / `staff123`, `admin1` / `admin123`).
+
+### 10. Optional: read-only role and validation tests
+
+```bash
+psql -U postgres -d sterilink -f database/roles.sql
+```
+
+`database/test_invalid_inserts.sql` deliberately tries six invalid writes. Run it against a separate empty database (for example `sterilink_test`, loaded with `schema.sql` and `triggers.sql`), not the seeded one: it inserts its own rows and expects each invalid write to be rejected.
 
 ---
 
